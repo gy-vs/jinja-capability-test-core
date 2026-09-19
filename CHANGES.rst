@@ -41,6 +41,15 @@ Unreleased
     already loaded. :issue:`295`
 -   Do not raise an error for undefined filters in unexecuted
     if-statements and conditional expressions. :issue:`842`
+-   Add the ``filter`` and ``test`` built-in tests to check whether a
+    filter or test with the given name is registered with the
+    environment. The checked callable is not called, and the lookup is
+    performed while rendering so that registrations changed after
+    compilation are taken into account. Add the ``environmenttest``
+    decorator for tests that need the environment. Like undefined
+    filters, undefined tests in unexecuted if-statements, elif branches
+    and conditional expressions are now only an error when the branch is
+    actually rendered.
 
 
 Version 2.11.3

@@ -505,11 +505,17 @@ class Environment:
     def call_test(self, name, value, args=None, kwargs=None):
         """Invokes a test on a value the same way the compiler does it.
 
+        .. versionchanged:: 3.0
+           Tests marked as ``environmenttest`` are passed the
+           environment as their first argument.
+
         .. versionadded:: 2.7
         """
         func = self.tests.get(name)
         if func is None:
             fail_for_missing_callable("test", name)
+        if getattr(func, "environmenttest", False) is True:
+            return func(self, value, *(args or ()), **(kwargs or {}))
         return func(value, *(args or ()), **(kwargs or {}))
 
     @internalcode

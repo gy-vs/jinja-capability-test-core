@@ -33,6 +33,7 @@ from .runtime import DebugUndefined
 from .runtime import make_logging_undefined
 from .runtime import StrictUndefined
 from .runtime import Undefined
+from .tests import environmenttest
 from .utils import clear_caches
 from .utils import contextfunction
 from .utils import environmentfunction

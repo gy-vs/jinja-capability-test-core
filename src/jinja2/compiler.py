@@ -445,6 +445,8 @@ class CodeGenerator(NodeVisitor):
         for node in nodes:
             visitor.visit(node)
         for dependency in "filters", "tests":
+            # remove the trailing "s" ("filters" -> "filter")
+            thing = dependency[:-1]
             mapping = getattr(self, dependency)
             for name in getattr(visitor, dependency):
                 if name not in mapping:
@@ -461,7 +463,7 @@ class CodeGenerator(NodeVisitor):
                 self.writeline(f"def {mapping[name]}(*unused):")
                 self.indent()
                 self.writeline(
-                    f'raise TemplateRuntimeError("no filter named {name!r} found")'
+                    f'raise TemplateRuntimeError("no {thing} named {name!r} found")'
                 )
                 self.outdent()
                 self.outdent()
@@ -1693,8 +1695,11 @@ class CodeGenerator(NodeVisitor):
     @optimizeconst
     def visit_Test(self, node, frame):
         self.write(self.tests[node.name] + "(")
-        if node.name not in self.environment.tests:
+        func = self.environment.tests.get(node.name)
+        if func is None and not frame.soft_frame:
             self.fail(f"no test named {node.name!r}", node.lineno)
+        if getattr(func, "environmenttest", False) is True:
+            self.write("environment, ")
         self.visit(node.node, frame)
         self.signature(node, frame)
         self.write(")")

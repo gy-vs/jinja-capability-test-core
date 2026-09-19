@@ -597,6 +597,8 @@ functions to a Jinja environment.
 
 .. autofunction:: jinja2.evalcontextfilter
 
+.. autofunction:: jinja2.environmenttest
+
 .. autofunction:: jinja2.environmentfunction
 
 .. autofunction:: jinja2.contextfunction
@@ -785,11 +787,15 @@ eval context object itself.
 Custom Tests
 ------------
 
-Tests work like filters just that there is no way for a test to get access
-to the environment or context and that they can't be chained.  The return
+Tests work like filters just that they can't be chained.  The return
 value of a test should be `True` or `False`.  The purpose of a test is to
 give the template designers the possibility to perform type and conformability
 checks.
+
+Tests are passed the tested value, but a test can instead be passed the
+current :class:`Environment` with the :func:`environmenttest`
+decorator. The built-in ``filter`` and ``test`` introspection tests use
+this to check whether a filter or test is registered.
 
 Here a simple test that checks if a variable is a prime number::
 
@@ -818,6 +824,18 @@ A template designer can then use the test like this:
     {% else %}
         42 is not a prime number
     {% endif %}
+
+Tests can also be passed the environment by applying the
+:func:`environmenttest` decorator. The tested value is then passed as
+the second argument::
+
+    from jinja2 import environmenttest
+
+    @environmenttest
+    def has_filter(environment, name):
+        return name in environment.filters
+
+    environment.tests['has_filter'] = has_filter
 
 
 .. _global-namespace:

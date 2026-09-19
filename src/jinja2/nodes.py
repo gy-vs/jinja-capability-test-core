@@ -687,7 +687,10 @@ class Test(Expr):
     def as_const(self, eval_ctx=None):
         test = self.environment.tests.get(self.name)
 
-        if test is None:
+        # Tests that depend on the environment, such as the "filter" and
+        # "test" introspection tests, must be evaluated while rendering so
+        # that changes to the environment's registries are not folded away.
+        if test is None or getattr(test, "environmenttest", False) is True:
             raise Impossible()
 
         eval_ctx = get_eval_context(self, eval_ctx)

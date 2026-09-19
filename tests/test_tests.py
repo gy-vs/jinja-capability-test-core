@@ -1,7 +1,12 @@
+import asyncio
+
 import pytest
 
 from jinja2 import Environment
 from jinja2 import Markup
+from jinja2 import TemplateAssertionError
+from jinja2 import TemplateRuntimeError
+from jinja2.sandbox import SandboxedEnvironment
 
 
 class MyDict(dict):
@@ -206,3 +211,192 @@ class TestTestsCase:
             '{{ "baz" is in {"bar": 1}}}'
         )
         assert tmpl.render() == "True|True|False|True|False|True|False|True|False"
+
+
+class TestIntrospectionTests:
+    def test_filter_registered(self, env):
+        tmpl = env.from_string(
+            '{{ "upper" is filter }}|{{ "missing" is filter }}'
+        )
+        assert tmpl.render() == "True|False"
+
+    def test_test_registered(self, env):
+        tmpl = env.from_string(
+            '{{ "defined" is test }}|{{ "missing" is test }}'
+        )
+        assert tmpl.render() == "True|False"
+
+    def test_negated(self, env):
+        tmpl = env.from_string(
+            '{{ "upper" is not filter }}|{{ "missing" is not test }}'
+        )
+        assert tmpl.render() == "False|True"
+
+    def test_does_not_call_checked_filter(self, env):
+        def boom(value):
+            raise AssertionError("filter must not be called")
+
+        env.filters["boom"] = boom
+        tmpl = env.from_string('{{ "boom" is filter }}')
+        assert tmpl.render() == "True"
+
+    def test_dynamic_filter_registry(self, env):
+        tmpl = env.from_string(
+            '{% if "custom" is filter %}{{ x|custom }}{% else %}none{% endif %}'
+        )
+        assert tmpl.render(x="x") == "none"
+        env.filters["custom"] = lambda value: value.upper()
+        assert tmpl.render(x="x") == "X"
+        del env.filters["custom"]
+        assert tmpl.render(x="x") == "none"
+
+    def test_dynamic_test_registry(self, env):
+        tmpl = env.from_string(
+            '{% if "custom" is test %}{{ x is custom }}{% else %}none{% endif %}'
+        )
+        assert tmpl.render(x=1) == "none"
+        env.tests["custom"] = lambda value: value == 1
+        assert tmpl.render(x=1) == "True"
+        del env.tests["custom"]
+        assert tmpl.render(x=1) == "none"
+
+    def test_not_constant_folded(self, env):
+        # The result depends on the environment registry, compiling must
+        # not fold it to a constant even with constant arguments and the
+        # optimizer enabled.
+        code = env.compile('{{ "upper" is filter }}', raw=True)
+        assert "environment" in code
+        tmpl = env.from_string('{{ "upper" is filter }}')
+        assert tmpl.render() == "True"
+        del env.filters["upper"]
+        assert tmpl.render() == "False"
+
+    def test_if_and_elif_branch_selection(self, env):
+        tmpl = env.from_string(
+            '{% if "f1" is filter %}f1'
+            '{% elif "f2" is filter %}f2'
+            '{% elif "t1" is test %}t1'
+            '{% else %}none{% endif %}'
+        )
+        assert tmpl.render() == "none"
+        env.tests["t1"] = lambda value: True
+        assert tmpl.render() == "t1"
+        env.filters["f2"] = lambda value: value
+        assert tmpl.render() == "f2"
+        env.filters["f1"] = lambda value: value
+        assert tmpl.render() == "f1"
+
+    def test_missing_test_direct_is_compile_error(self, env):
+        with pytest.raises(TemplateAssertionError, match="no test named 'f'"):
+            env.from_string("{{ x is f }}")
+
+    def test_missing_test_in_if_condition(self, env):
+        # in an if condition the missing test is only resolved at runtime,
+        # same as a missing filter
+        tmpl = env.from_string("{%- if x is defined and x is f -%}y{% endif %}")
+        assert tmpl.render() == ""
+        with pytest.raises(TemplateRuntimeError, match="no test named 'f'"):
+            tmpl.render(x=42)
+
+    def test_missing_test_in_if(self, env):
+        tmpl = env.from_string(
+            "{%- if x is defined -%}{% if x is f %}y{% endif %}"
+            "{%- else -%}x{% endif %}"
+        )
+        assert tmpl.render() == "x"
+        with pytest.raises(TemplateRuntimeError, match="no test named 'f'"):
+            tmpl.render(x=42)
+
+    def test_missing_test_in_elif(self, env):
+        tmpl = env.from_string(
+            "{%- if x is defined -%}{{ x }}"
+            "{%- elif y is defined -%}{% if y is f %}y{% endif %}"
+            "{%- else -%}foo{%- endif -%}"
+        )
+        assert tmpl.render() == "foo"
+        with pytest.raises(TemplateRuntimeError, match="no test named 'f'"):
+            tmpl.render(y=42)
+
+    def test_missing_test_in_else(self, env):
+        tmpl = env.from_string(
+            "{%- if x is not defined -%}foo"
+            "{%- else -%}{% if x is f %}y{% endif %}{%- endif -%}"
+        )
+        assert tmpl.render() == "foo"
+        with pytest.raises(TemplateRuntimeError, match="no test named 'f'"):
+            tmpl.render(x=42)
+
+    def test_missing_test_in_condexpr(self, env):
+        tmpl = env.from_string("{{ x if (x is defined) and (x is f) else 'foo' }}")
+        assert tmpl.render() == "foo"
+        with pytest.raises(TemplateRuntimeError, match="no test named 'f'"):
+            tmpl.render(x=42)
+
+    def test_call_test(self, env):
+        assert env.call_test("filter", "upper") is True
+        assert env.call_test("filter", "missing") is False
+        assert env.call_test("test", "defined") is True
+        assert env.call_test("test", "missing") is False
+        assert env.call_test("odd", 3) is True
+
+    def test_sandbox(self):
+        env = SandboxedEnvironment()
+        tmpl = env.from_string(
+            '{{ "upper" is filter }}|{{ "missing" is test }}'
+        )
+        assert tmpl.render() == "True|False"
+
+        def boom(value):
+            raise AssertionError("filter must not be called")
+
+        env.filters["boom"] = boom
+        assert env.from_string('{{ "boom" is filter }}').render() == "True"
+
+    def test_async(self):
+        env = Environment(enable_async=True)
+        tmpl = env.from_string(
+            '{% if "upper" is filter %}f{% endif %}'
+            '{% if "missing" is test %}-X{% else %}-t{% endif %}'
+        )
+        loop = asyncio.new_event_loop()
+        try:
+            assert loop.run_until_complete(tmpl.render_async()) == "f-t"
+        finally:
+            loop.close()
+
+        env.filters["custom"] = lambda value: value
+        tmpl = env.from_string(
+            '{%- if "custom" is filter -%}yes{%- else -%}no{%- endif -%}'
+        )
+        loop = asyncio.new_event_loop()
+        try:
+            assert loop.run_until_complete(tmpl.render_async()) == "yes"
+        finally:
+            loop.close()
+
+    def test_async_missing_test_in_dead_branch(self):
+        env = Environment(enable_async=True)
+        tmpl = env.from_string(
+            "{% if false %}{% if x is f %}y{% endif %}{% endif %}ok"
+        )
+        loop = asyncio.new_event_loop()
+        try:
+            assert loop.run_until_complete(tmpl.render_async()) == "ok"
+        finally:
+            loop.close()
+
+    def test_custom_environment_test(self):
+        from jinja2 import environmenttest
+
+        env = Environment()
+
+        @environmenttest
+        def has_global(environment, value):
+            return value in environment.globals
+
+        env.tests["global"] = has_global
+        env.globals["g"] = 42
+        tmpl = env.from_string('{{ "g" is global }}|{{ "x" is global }}')
+        assert tmpl.render() == "True|False"
+        assert env.call_test("global", "g") is True
+        assert env.call_test("global", "x") is False

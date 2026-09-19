@@ -11,6 +11,17 @@ regex_type = type(number_re)
 test_callable = callable
 
 
+def environmenttest(f):
+    """Decorator for tests that need access to the environment.
+
+    A wrapped function is called with the active
+    :class:`~jinja2.Environment` as the first argument instead of the
+    tested value.
+    """
+    f.environmenttest = True
+    return f
+
+
 def test_odd(value):
     """Return true if the variable is odd."""
     return value % 2 == 1
@@ -170,6 +181,54 @@ def test_in(value, seq):
     return value in seq
 
 
+@environmenttest
+def test_filter(environment, value):
+    """Check if a filter is registered with the environment.
+
+    ``value`` is the name of the filter. This only checks if the filter
+    exists, it does not call it. This makes it possible to use optional
+    filters in the same template depending on the environment:
+
+    .. sourcecode:: jinja
+
+        {% if "markdown" is filter %}
+            {{ body|markdown }}
+        {% else %}
+            {{ body }}
+        {% endif %}
+
+    The check is evaluated while rendering, so filters added to or
+    removed from the environment after the template was compiled are
+    taken into account.
+
+    .. versionadded:: 3.0
+    """
+    return value in environment.filters
+
+
+@environmenttest
+def test_test(environment, value):
+    """Check if a test is registered with the environment.
+
+    ``value`` is the name of the test. This only checks if the test
+    exists, it does not call it. This makes it possible to use optional
+    tests in the same template depending on the environment:
+
+    .. sourcecode:: jinja
+
+        {% if "prime" is test %}
+            {% if n is prime %}...{% endif %}
+        {% endif %}
+
+    The check is evaluated while rendering, so tests added to or removed
+    from the environment after the template was compiled are taken into
+    account.
+
+    .. versionadded:: 3.0
+    """
+    return value in environment.tests
+
+
 TESTS = {
     "odd": test_odd,
     "even": test_even,
@@ -193,6 +252,8 @@ TESTS = {
     "sameas": test_sameas,
     "escaped": test_escaped,
     "in": test_in,
+    "filter": test_filter,
+    "test": test_test,
     "==": operator.eq,
     "eq": operator.eq,
     "equalto": operator.eq,

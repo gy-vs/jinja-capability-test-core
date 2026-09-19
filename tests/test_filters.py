@@ -822,3 +822,19 @@ class TestFilter:
         with pytest.raises(TemplateRuntimeError, match="no filter named 'f'"):
             t1.render(x=42)
             t2.render(x=42)
+
+    def test_filter_introspection_test(self, env):
+        tmpl = env.from_string(
+            '{% if "f" is filter %}{{ x|f }}{% else %}none{% endif %}'
+        )
+        assert tmpl.render(x=1) == "none"
+        env.filters["f"] = lambda v: v + 1
+        assert tmpl.render(x=1) == "2"
+
+    def test_filter_introspection_missing_in_dead_branch(self, env):
+        tmpl = env.from_string(
+            '{%- if "f" is filter -%}{{ x|f }}{%- else -%}none{%- endif -%}'
+        )
+        assert tmpl.render(x=1) == "none"
+        env.filters["f"] = lambda v: v + 1
+        assert tmpl.render(x=1) == "2"

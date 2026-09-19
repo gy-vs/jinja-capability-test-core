@@ -165,6 +165,22 @@ expressions do the same thing::
 
 The :ref:`builtin-tests` below describes all the builtin tests.
 
+The ``filter`` and ``test`` tests introspect the environment's
+registries instead of testing a value. They return ``true`` if a filter
+or test with that name is registered. The checked callable is never
+called, so the same template can provide optional functionality
+depending on what the environment used to render it provides::
+
+    {% if "markdown" is filter %}
+        {{ body|markdown }}
+    {% else %}
+        {{ body }}
+    {% endif %}
+
+The lookup happens while the template is rendered, not when it is
+compiled. Filters or tests added to and removed from the environment
+afterwards are taken into account.
+
 
 .. _comments:
 
@@ -1784,7 +1800,8 @@ without setting up a debugger.
      'filters': ['abs', 'attr', 'batch', 'capitalize', 'center', 'count', 'd',
                  ..., 'urlencode', 'urlize', 'wordcount', 'wordwrap', 'xmlattr'],
      'tests': ['!=', '<', '<=', '==', '>', '>=', 'callable', 'defined',
-               ..., 'odd', 'sameas', 'sequence', 'string', 'undefined', 'upper']}
+               'filter', ..., 'odd', 'sameas', 'sequence', 'string', 'test',
+               'undefined', 'upper']}
 
 
 With Statement
