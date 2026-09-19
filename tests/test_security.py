@@ -35,6 +35,23 @@ class PublicStuff:
 
 
 class TestSandbox:
+    def test_is_filter_is_test(self, env):
+        env = SandboxedEnvironment()
+        t = env.from_string(
+            "{{ 'upper' is filter }}|{{ 'bad-name' is filter }}"
+            "|{{ 'number' is test }}|{{ 'bad-name' is test }}"
+        )
+        assert t.render() == "True|False|True|False"
+
+    def test_is_filter_dynamic_registry(self, env):
+        env = SandboxedEnvironment()
+        t = env.from_string(
+            "{%- if 'markdown' is filter -%}yes{%- else -%}no{%- endif -%}"
+        )
+        assert t.render() == "no"
+        env.filters["markdown"] = lambda value: value
+        assert t.render() == "yes"
+
     def test_unsafe(self, env):
         env = SandboxedEnvironment()
         pytest.raises(

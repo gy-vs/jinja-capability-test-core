@@ -41,6 +41,16 @@ Unreleased
     already loaded. :issue:`295`
 -   Do not raise an error for undefined filters in unexecuted
     if-statements and conditional expressions. :issue:`842`
+-   Add ``is filter`` and ``is test`` tests to test if a name is a
+    registered filter or test. This allows checking if a filter is
+    available in a template before using it. Test functions can be
+    decorated with ``@environmentfunction``, ``@evalcontextfunction``,
+    or ``@contextfunction``. :issue:`842`, :pr:`1248`
+-   Filters and tests decorated with ``@environmentfilter`` or
+    ``@environmentfunction`` are evaluated at render time instead of
+    being constant folded at compile time, so changes to the
+    environment's registry after compilation are reflected when
+    rendering. :issue:`842`
 
 
 Version 2.11.3

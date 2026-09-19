@@ -2,6 +2,11 @@ import pytest
 
 from jinja2 import Environment
 from jinja2 import Markup
+from jinja2 import TemplateAssertionError
+from jinja2 import TemplateRuntimeError
+from jinja2 import contextfunction
+from jinja2 import environmentfunction
+from jinja2 import evalcontextfunction
 
 
 class MyDict(dict):
@@ -206,3 +211,143 @@ class TestTestsCase:
             '{{ "baz" is in {"bar": 1}}}'
         )
         assert tmpl.render() == "True|True|False|True|False|True|False|True|False"
+
+
+def test_name_undefined(env):
+    with pytest.raises(TemplateAssertionError, match="No test named 'f'"):
+        env.from_string("{{ x is f }}")
+
+
+def test_name_undefined_in_if(env):
+    t = env.from_string("{% if x is defined %}{{ x is f }}{% endif %}")
+    assert t.render() == ""
+
+    with pytest.raises(TemplateRuntimeError, match="No test named 'f'"):
+        t.render(x=1)
+
+
+def test_name_undefined_in_elif(env):
+    t = env.from_string(
+        "{%- if x is defined -%}x"
+        "{%- elif y is defined -%}{{ y is f }}"
+        "{%- else -%}foo{%- endif -%}"
+    )
+    assert t.render() == "foo"
+    assert t.render(x=1) == "x"
+
+    with pytest.raises(TemplateRuntimeError, match="No test named 'f'"):
+        t.render(y=1)
+
+
+def test_is_filter(env):
+    assert env.call_test("filter", "title")
+    assert not env.call_test("filter", "bad-name")
+
+
+def test_is_test(env):
+    assert env.call_test("test", "number")
+    assert not env.call_test("test", "bad-name")
+
+
+def test_is_filter_in_template(env):
+    t = env.from_string("{{ 'upper' is filter }}|{{ 'bad-name' is filter }}")
+    assert t.render() == "True|False"
+
+
+def test_is_test_in_template(env):
+    t = env.from_string("{{ 'number' is test }}|{{ 'bad-name' is test }}")
+    assert t.render() == "True|False"
+
+
+def test_is_filter_test_do_not_call(env):
+    """Checking a name returns a boolean without calling the
+    registered filter or test.
+    """
+    calls = []
+    env.filters["record"] = lambda value: calls.append(value)
+    env.tests["record"] = lambda value: calls.append(value)
+    t = env.from_string("{{ 'record' is filter }}|{{ 'record' is test }}")
+    assert t.render() == "True|True"
+    assert calls == []
+
+
+def test_is_filter_if_elif(env):
+    t = env.from_string(
+        "{%- if 'markdown' is filter -%}markdown"
+        "{%- elif 'upper' is filter -%}upper"
+        "{%- else -%}none{%- endif -%}"
+    )
+    assert t.render() == "upper"
+    env.filters["markdown"] = lambda value: value
+    assert t.render() == "markdown"
+
+
+def test_is_filter_dynamic_registry(env):
+    """Adding or removing a filter after the template is compiled is
+    reflected at render time, the check is not constant folded.
+    """
+    t = env.from_string(
+        "{%- if 'markdown' is filter -%}{{ value|markdown }}"
+        "{%- else -%}{{ value }}{%- endif -%}"
+    )
+    assert t.render(value="x") == "x"
+    env.filters["markdown"] = lambda value: value.upper()
+    assert t.render(value="x") == "X"
+    del env.filters["markdown"]
+    assert t.render(value="x") == "x"
+
+
+def test_is_test_dynamic_registry(env):
+    """Adding or removing a test after the template is compiled is
+    reflected at render time, the check is not constant folded.
+    """
+    t = env.from_string("{%- if 'loud' is test -%}loud{%- else -%}quiet{%- endif -%}")
+    assert t.render() == "quiet"
+    env.tests["loud"] = lambda value: True
+    assert t.render() == "loud"
+    del env.tests["loud"]
+    assert t.render() == "quiet"
+
+
+def test_test_decorators(env):
+    """Custom tests can receive the context, eval context, or
+    environment as the first argument.
+    """
+
+    @contextfunction
+    def is_expected(context, value):
+        return value == context["expected"]
+
+    @evalcontextfunction
+    def is_autoescape(eval_ctx, value):
+        return eval_ctx.autoescape
+
+    @environmentfunction
+    def is_sandboxed(environment, value):
+        return environment.sandboxed
+
+    env.tests["is_expected"] = is_expected
+    env.tests["is_autoescape"] = is_autoescape
+    env.tests["is_sandboxed"] = is_sandboxed
+    t = env.from_string(
+        "{{ 42 is is_expected }}|{{ 0 is is_autoescape }}|{{ 0 is is_sandboxed }}"
+    )
+    assert t.render(expected=42) == "True|False|False"
+
+
+def test_call_test_with_context(env):
+    """``Environment.call_test`` passes context and eval context to
+    decorated tests like the compiler does.
+    """
+
+    @contextfunction
+    def is_set(context, value):
+        return context.get(value) is not None
+
+    env.tests["is_set"] = is_set
+    context = env.from_string("").new_context({"x": 1})
+    assert env.call_test("is_set", "x", context=context)
+    assert not env.call_test("is_set", "y", context=context)
+
+    with pytest.raises(TemplateRuntimeError, match="without context"):
+        env.call_test("is_set", "x")

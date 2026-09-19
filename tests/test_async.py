@@ -7,6 +7,7 @@ from jinja2 import Environment
 from jinja2 import Template
 from jinja2.asyncsupport import auto_aiter
 from jinja2.exceptions import TemplateNotFound
+from jinja2.exceptions import TemplateRuntimeError
 from jinja2.exceptions import TemplatesNotFound
 from jinja2.exceptions import UndefinedError
 
@@ -86,6 +87,49 @@ def test_async_blocks():
 
     rv = run(func())
     assert rv == "<Test><Test>"
+
+
+def test_is_filter_is_test_async():
+    env = Environment(enable_async=True)
+    t = env.from_string(
+        "{{ 'upper' is filter }}|{{ 'bad-name' is filter }}"
+        "|{{ 'number' is test }}|{{ 'bad-name' is test }}"
+    )
+
+    async def func():
+        return await t.render_async()
+
+    assert run(func()) == "True|False|True|False"
+
+
+def test_is_filter_dynamic_registry_async():
+    env = Environment(enable_async=True)
+    t = env.from_string(
+        "{%- if 'markdown' is filter -%}{{ value|markdown }}"
+        "{%- else -%}{{ value }}{%- endif -%}"
+    )
+
+    async def func(value):
+        return await t.render_async(value=value)
+
+    assert run(func("x")) == "x"
+    env.filters["markdown"] = lambda value: value.upper()
+    assert run(func("x")) == "X"
+    del env.filters["markdown"]
+    assert run(func("x")) == "x"
+
+
+def test_undefined_test_in_if_async():
+    env = Environment(enable_async=True)
+    t = env.from_string("{% if x is defined %}{{ x is f }}{% endif %}")
+
+    async def func(**kwargs):
+        return await t.render_async(**kwargs)
+
+    assert run(func()) == ""
+
+    with pytest.raises(TemplateRuntimeError, match="No test named 'f'"):
+        run(func(x=1))
 
 
 def test_async_generate():
